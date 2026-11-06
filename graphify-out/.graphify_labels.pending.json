@@ -5,9 +5,13 @@
   "3": "test_sim.py",
   "4": "MSP430",
   "5": "TimerA",
-  "6": ".show_help",
+  "6": "cli.py",
   "7": "gui.py",
   "8": "WDT",
+  "9": "UART",
   "10": "run",
-  "11": "tests/__init__.py"
+  "11": "tests/__init__.py",
+  "12": "MSP430 Simulator (G2553) — kart gerektirmez",
+  "13": "run.sh script",
+  "14": "msp430sim"
 }

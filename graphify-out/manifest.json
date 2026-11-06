@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "msp430sim/__main__.py": {
-    "mtime": 1793965073.3884633,
-    "seen": 1793965115.2362309,
-    "ast_hash": "98b0baf0d4de2474321894b6c195bd52",
+    "mtime": 1793980183.071106,
+    "seen": 1793980312.46863,
+    "ast_hash": "4d1e3ec63d3a64e68a7f105d9d5e67f3",
     "semantic_hash": ""
   },
   "msp430sim/asm.py": {
@@ -24,9 +24,9 @@
     "semantic_hash": ""
   },
   "msp430sim/gui.py": {
-    "mtime": 1793975086.464322,
-    "seen": 1793975183.9471738,
-    "ast_hash": "c2dc401cb0a1e7cb5a1d33613b3a7cf1",
+    "mtime": 1793980173.0132313,
+    "seen": 1793980312.4686341,
+    "ast_hash": "07a251aaf486df758fb92c24937f3a73",
     "semantic_hash": ""
   },
   "tests/__init__.py": {
@@ -36,21 +36,45 @@
     "semantic_hash": ""
   },
   "tests/test_sim.py": {
-    "mtime": 1793978983.468216,
-    "seen": 1793979064.498216,
-    "ast_hash": "3dccc9fa17d0eebceb81450e6c038341",
+    "mtime": 1793980094.7298865,
+    "seen": 1793980312.468639,
+    "ast_hash": "ddf7a2b2ed089740a32b211af6b1d381",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1793965114.357481,
-    "seen": 1793965115.236236,
-    "ast_hash": "a0d95bb428fdfb982419169afbc8cd81",
+    "mtime": 1793980278.8777092,
+    "seen": 1793980312.46864,
+    "ast_hash": "c4d36d0a008dbd99751a62982ac09d2f",
     "semantic_hash": ""
   },
   "msp430sim/ref.py": {
     "mtime": 1793965985.82175,
     "seen": 1793966001.745436,
     "ast_hash": "9b1109fce8dd858bdd169f81aaa256a0",
+    "semantic_hash": ""
+  },
+  "msp430sim/cli.py": {
+    "mtime": 1793980129.7885163,
+    "seen": 1793980312.468632,
+    "ast_hash": "85589702273df349fbb782878a2e457c",
+    "semantic_hash": ""
+  },
+  "pyproject.toml": {
+    "mtime": 1793980266.146641,
+    "seen": 1793980312.4686348,
+    "ast_hash": "216a23c5dd2fbb317531ae5d50a997b1",
+    "semantic_hash": ""
+  },
+  "run.py": {
+    "mtime": 1793980192.042999,
+    "seen": 1793980312.4686358,
+    "ast_hash": "eb7d263f9608a6960283affb2e7d7a9f",
+    "semantic_hash": ""
+  },
+  "run.sh": {
+    "mtime": 1793980197.0689216,
+    "seen": 1793980312.468637,
+    "ast_hash": "8dd6cef1c8e2198ffd9f8a9003fd2bab",
     "semantic_hash": ""
   }
 }

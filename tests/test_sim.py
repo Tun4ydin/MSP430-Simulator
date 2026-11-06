@@ -431,5 +431,26 @@ class Gui(unittest.TestCase):
         self.assertIsNone(a.result)
 
 
+class CommandLine(unittest.TestCase):
+    def test_cli_assemble_file(self):
+        from msp430sim.cli import run_cli
+        code, out = run_cli(['--assemble', 'msp430sim/examples/fib.asm'])
+        self.assertEqual(code, 0)
+        self.assertIn('0xC000', out)
+
+    def test_cli_run_file(self):
+        from msp430sim.cli import run_cli
+        code, out = run_cli(['--cli', 'msp430sim/examples/fib.asm', '--cycles', '1000'])
+        self.assertEqual(code, 0)
+        self.assertIn('Cycles:', out)
+        self.assertIn('PC:', out)
+
+    def test_cli_help(self):
+        from msp430sim.cli import run_cli
+        code, out = run_cli(['--help'])
+        self.assertEqual(code, 0)
+        self.assertIn('MSP430', out)
+
+
 if __name__ == '__main__':
     unittest.main()

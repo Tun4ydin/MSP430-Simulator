@@ -22,7 +22,7 @@ LED = {('P1', 0): '#e53935', ('P1', 6): '#43a047'}
 
 
 class App(tk.Tk):
-    def __init__(self):
+    def __init__(self, initial_file=None):
         super().__init__()
         self.title('MSP430 Simulator (G2553)')
         self.geometry('1280x820')
@@ -53,7 +53,13 @@ class App(tk.Tk):
         self.bind('<Control-S>', lambda e: self.file_save(True))
         self.protocol('WM_DELETE_WINDOW', lambda: self.destroy() if self._confirm_discard() else None)
         self.help_win = None
-        self.load_example('main.asm')
+        if initial_file and Path(initial_file).is_file():
+            p = Path(initial_file)
+            self.path = str(p.resolve())
+            self.set_text(p.read_text(encoding='utf-8', errors='replace'))
+            self.status.set(f'Acildi: {p.name}')
+        else:
+            self.load_example('main.asm')
         self.refresh()
 
     # ---------------- arayuz kurulumu ----------------
@@ -633,5 +639,5 @@ class App(tk.Tk):
         self.log_seen = len(cpu.log)
 
 
-def main():
-    App().mainloop()
+def main(initial_file=None):
+    App(initial_file=initial_file).mainloop()

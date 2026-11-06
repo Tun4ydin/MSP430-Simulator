@@ -1,12 +1,29 @@
 # MSP430 Simulator (G2553) — kart gerektirmez
 
-MARS tarzı masaüstü simülatör: assembly yaz → Assemble (F3) → Run (F5) / Step (F7). Saf Python + Tkinter, bağımlılık yok.
+MARS tarzı masaüstü simülatör: assembly yaz → Assemble (F3) → Run (F5) / Step (F7). Saf Python + Tkinter, harici bağımlılık yok.
 
+## Hızlı Başlangıç
+
+En kolay yol — tek komutla çalıştırın (Tkinter destekli Python otomatik algılanır):
+
+```bash
+./run.sh                                    # veya: python3 run.py
 ```
-/usr/local/bin/python3 -m msp430sim        # Tk destekli Python gerekir
-/usr/local/bin/python3 -m unittest discover -s tests -t .
+
+### Diğer Kullanım Seçenekleri
+
+```bash
+python3 run.py msp430sim/examples/fib.asm   # Belirtilen dosyayı açarak GUI başlatır
+python3 run.py --cli msp430sim/examples/fib.asm # GUI olmadan terminalde simüle eder
+python3 run.py --assemble msp430sim/examples/fib.asm # Yalnızca derler ve blokları listeler
+
+# Paket olarak kurmak isterseniz:
+pip install -e .
+msp430sim                                   # Global komut
+
+# Testleri çalıştırmak için:
+python3 -m unittest discover -s tests
 ```
-(`python3` Homebrew 3.15 sürümünde tkinter yok; `python-tk` kurun veya Tk'li bir Python kullanın.)
 
 ## Neler var
 - MSP430 (non-X) komut seti, tüm adresleme modları, constant generator, gerçek cycle sayımı, kesmeler, LPM.
