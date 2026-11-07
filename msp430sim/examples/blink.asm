@@ -1,4 +1,4 @@
-; P1.0 (kirmizi LED) gecikme dongusuyle yanip soner.
+; P1.0 (LED1/D1: G2ET'de yesil, eski G2 kartta kirmizi) gecikme dongusuyle yanip soner.
 ; Hizi "1 MHz" yapin: yaklasik 0.2 sn araliklarla yanar.
         .org 0xC000
 start:  mov   #WDTPW|WDTHOLD, &WDTCTL   ; watchdog'u durdur (unutulursa reset atar!)

@@ -28,7 +28,8 @@ python3 -m unittest discover -s tests
 ## Neler var
 - MSP430 (non-X) komut seti, tüm adresleme modları, constant generator, gerçek cycle sayımı, kesmeler, LPM.
 - G2553 çevre birimleri: P1/P2 (LED/buton, kenar kesmesi), Timer_A0 (stop/up/continuous/up-down, CCR0/CCR1/CCR2/TAIV), WDT (reset ve interval), UART (UCA0, TX/RX + kesmeler).
-- GUI: editör, listing + breakpoint (Execute sekmesinde çift tık), register/flag/cycle paneli, bellek görüntüleyici, I/O paneli (P1.3 = S2 butonu), UART konsolu, hata listesi (çift tık satıra gider).
+- 3D kart görünümü (F9 / "3D Kart"): MSP-EXP430G2ET LaunchPad'in TI tasarım dosyalarından (SLAR153) üretilmiş gerçek ölçülü modeli. LED'ler (D1 yeşil = P1.0, D2 kırmızı = P1.6, D3 RGB = P2.1/P2.3/P2.5), header pinleri ve DIP bacakları lojik seviyeye göre renklenir, J101 TXD/RXD jumper'ları UART trafiğinde yanıp söner. S1 (P1.3) ve S2 (RESET) model üzerinde tıklanabilir; sürükle = döndür, sağ tık = kaydır, tekerlek = yakınlaş. Saf Tkinter, ek bağımlılık yok.
+- GUI: editör, listing + breakpoint (Execute sekmesinde çift tık), register/flag/cycle paneli, bellek görüntüleyici, I/O paneli (P1.3 = S1 butonu), UART konsolu, hata listesi (çift tık satıra gider).
 
 ## Sözdizimi
 `label:`, `;` veya `//` yorum, `MOV.B #1, &P1OUT`, emulated komutlar (NOP RET POP BR CLR INC DEC TST INV RLA ADC SBC EINT DINT ...).

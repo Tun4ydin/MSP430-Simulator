@@ -18,7 +18,9 @@ STOP_MSG = {'break': 'Breakpoint', 'halt': 'Program bitti (jmp $, kesme kapali)'
             'dead': 'CPU kapali ve GIE=0: uyanamaz (Reset gerekli)', 'illegal': 'Gecersiz komut',
             'end': 'Program sonu: kodun bittigi yerden sonrasi bos flash. Sona "jmp $" ekleyin',
             'sleep': 'Uyuyor (LPM): kesme/olay bekliyor'}
-LED = {('P1', 0): '#e53935', ('P1', 6): '#43a047'}
+# MSP-EXP430G2ET: D1 yesil = P1.0, D2 kirmizi = P1.6, D3 RGB = P2.1 (R) / P2.3 (G) / P2.5 (B)
+LED = {('P1', 0): '#43a047', ('P1', 6): '#e53935', ('P2', 1): '#e53935', ('P2', 3): '#43a047',
+       ('P2', 5): '#1e88e5'}
 
 
 class App(tk.Tk):
@@ -53,6 +55,8 @@ class App(tk.Tk):
         self.bind('<Control-S>', lambda e: self.file_save(True))
         self.protocol('WM_DELETE_WINDOW', lambda: self.destroy() if self._confirm_discard() else None)
         self.help_win = None
+        self.board3d = None
+        self.bind('<F9>', lambda e: self.show_board3d())
         if initial_file and Path(initial_file).is_file():
             p = Path(initial_file)
             self.path = str(p.resolve())
@@ -83,6 +87,9 @@ class App(tk.Tk):
                               ('Reset', self.do_reset, 'F8')):
             r.add_command(label=lbl, command=cmd, accelerator=key)
         mb.add_cascade(label='Calistir', menu=r)
+        v = tk.Menu(mb, tearoff=0)
+        v.add_command(label='3D kart (MSP-EXP430G2ET)', command=self.show_board3d, accelerator='F9')
+        mb.add_cascade(label='Gorunum', menu=v)
         h = tk.Menu(mb, tearoff=0)
         h.add_command(label='Komut referansi', command=self.show_help, accelerator='F1')
         mb.add_cascade(label='Yardim', menu=h)
@@ -199,6 +206,7 @@ class App(tk.Tk):
         for t, c in (('Assemble F3', self.do_assemble), ('Run F5', self.do_run), ('Step F7', self.do_step),
                      ('Pause F6', self.do_pause), ('Reset F8', self.do_reset)):
             ttk.Button(bar, text=t, command=c).pack(side='left', padx=2)
+        ttk.Button(bar, text='3D Kart F9', command=self.show_board3d).pack(side='left', padx=(10, 2))
         ttk.Label(bar, text='  Hiz:').pack(side='left')
         self.speed = ttk.Combobox(bar, values=list(SPEEDS), state='readonly', width=20)
         self.speed.set('1 MHz (gercek zaman)')
@@ -332,7 +340,7 @@ class App(tk.Tk):
                 oval = cv.create_oval(3, 3, 23, 23, fill='#555', outline='#222')
                 cv.pack()
                 s2 = (name, b) == ('P1', 3)
-                ttk.Label(cell, text=f'{name}.{b}' + (' (S2)' if s2 else '')).pack()
+                ttk.Label(cell, text=f'{name}.{b}' + (' (S1)' if s2 else '')).pack()
                 if s2:                                       # anlik buton: basilinca 0
                     btn = ttk.Button(cell, text='bas', width=5)
                     btn.bind('<ButtonPress-1>', lambda e, p=port, n=b: p.set_input(n, 0))
@@ -506,6 +514,16 @@ class App(tk.Tk):
     def feed_rx(self):
         if self.rxq and not self.cpu.uart.ifg2 & 1:
             self.cpu.uart.receive(self.rxq.popleft())
+            if self.board3d:
+                self.board3d.flash('RXD')
+
+    # ---------------- 3D kart ----------------
+    def show_board3d(self):
+        if self.board3d and self.board3d.alive():
+            self.board3d.lift()
+            return
+        from .board3d import Board3D
+        self.board3d = Board3D(self)
 
     def _send(self, e):
         s = self.rx_e.get() + ('\n' if self.nl.get() else '')
@@ -629,6 +647,8 @@ class App(tk.Tk):
             cv.itemconfig(oval, fill=LED.get((name, b), '#fdd835') if lvl else '#555', width=3 if out else 1)
             mode.config(text='out' if out else 'in')
         if cpu.uart.out:
+            if self.board3d:
+                self.board3d.flash('TXD')
             self.con.config(state='normal')
             self.con.insert('end', bytes(cpu.uart.out).decode('latin-1').replace('\r', ''))
             self.con.see('end')
@@ -637,6 +657,8 @@ class App(tk.Tk):
         for m in cpu.log[self.log_seen:]:
             self.note(m)
         self.log_seen = len(cpu.log)
+        if self.board3d:
+            self.board3d.update_state()
 
 
 def main(initial_file=None):

@@ -1,4 +1,4 @@
-; S2 butonu (P1.3) kesmesi ile P1.0 LED'ini degistirir. CPU uykuda (LPM4 benzeri) bekler.
+; S1 butonu (P1.3; eski G2 kartta S2) kesmesi ile P1.0 LED'ini degistirir. CPU uykuda (LPM4 benzeri) bekler.
 ; I/O panelinde P1.3'e tiklayin (basma = dusen kenar).
         .org 0xC000
 start:  mov   #WDTPW|WDTHOLD, &WDTCTL

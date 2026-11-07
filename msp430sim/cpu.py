@@ -424,7 +424,7 @@ class MSP430:
         self.log = []
         self.mem = Mem(self.log)
         m = self.mem
-        self.p1 = Port(m, 0x20, 0xFFE4, ext=0x08)   # P1.3: LaunchPad S2, harici pull-up
+        self.p1 = Port(m, 0x20, 0xFFE4, ext=0x08)   # P1.3: LaunchPad S1 butonu (G2ET), harici 47k pull-up
         self.p2 = Port(m, 0x28, 0xFFE6)
         self.ta = TimerA(m)
         self.wdt = WDT(m, self)
