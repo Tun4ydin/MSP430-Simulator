@@ -27,6 +27,8 @@ LED_ON = {'green': '#3dff6e', 'red': '#ff2a1a', 'yellow': '#ffd21a'}
 LED_OFF = {'green': '#c9dcc4', 'red': '#e2bcb6', 'yellow': '#e6dfb4'}
 PIN_COL = {'out1': '#ff6d00', 'out0': '#2f6bff', 'in1': '#fff08a', 'in0': '#8f8f8f'}
 FLASH = {'TXD': '#4fc3f7', 'RXD': '#7CFC7C'}
+UPDATE_HZ = 12.5           # simulator -> model guncelleme hizi siniri (LED'ler icin yeterli)
+OUTLINE_MIN_PX2 = 150.0    # tam karede yalnizca bu alandan buyuk yuzlere kenar cizgisi (dikis gizleme)
 
 
 def _rgb(c):
@@ -114,10 +116,11 @@ def led_levels(pins):
 # ---------------------------------------------------------------- sahne (geometri)
 class Box:
     """Konveks govde: yuzler (vertex indeksleri, normal, duzlem d, taban renk, isik carpani)."""
-    __slots__ = ('faces', 'center', 'order', 'only', 'tag')
+    __slots__ = ('faces', 'center', 'order', 'only', 'tag', 'detail')
 
-    def __init__(self, faces, center, order, only, tag):
+    def __init__(self, faces, center, order, only, tag, detail=False):
         self.faces, self.center, self.order, self.only, self.tag = faces, center, order, only, tag
+        self.detail = detail        # < 0.6 mm (uc kapaklari, bacaklar...): surukleme karelerinde cizilmez
 
 
 class Group:
@@ -135,7 +138,8 @@ class Scene:
     def __init__(self):
         self.V = []                     # [(x, y, z)]
         self.groups = []
-        self.decals = {'T': [], 'B': []}   # (kind, idx, color, width, role, hq)
+        self.decals = {'T': [], 'B': []}   # (kind, level, idx, color, width, role); idx -> VD[level]
+        self.VD = {'lq': [], 'hq': []}     # yuzey detaylarinin vertexleri (lq: surukleme sirasinda da cizilir)
         self.board_sides = []           # yuzler
         self.board_top = self.board_bot = None
         self.T = B.T
@@ -191,7 +195,8 @@ class Scene:
             for a in range(3):
                 g.lo[a] = min(g.lo[a], v[a])
                 g.hi[a] = max(g.hi[a], v[a])
-        b = Box(faces, ctr, order, only, tag)
+        size = max(max(v[a] for v in xs) - min(v[a] for v in xs) for a in range(3))
+        b = Box(faces, ctr, order, only, tag, detail=size < 0.6 and role is None)
         g.boxes.append(b)
         return b
 
@@ -205,8 +210,12 @@ class Scene:
             return
         if z is None:
             z = 0.004 if side == 'T' else -self.T - 0.004
-        idx = [self._vert(flat[i], flat[i + 1], z) for i in range(0, len(flat), 2)]
-        self.decals[side].append((kind, idx, color, width, role, hq))
+        lvl = 'hq' if hq or (kind == 'line' and width < 0.2) else 'lq'
+        V = self.VD[lvl]
+        base = len(V)
+        for i in range(0, len(flat), 2):
+            V.append((flat[i], flat[i + 1], z))
+        self.decals[side].append((kind, lvl, tuple(range(base, len(V))), color, width, role))
 
     def disc(self, side, x, y, r, color, role=None, n=16, hq=False, z=None):
         flat = []
@@ -426,13 +435,13 @@ class Scene:
                     self.disc(side, p[2], p[3], 2.15, '#8c8c86', n=20)
                     self.disc(side, p[2], p[3], 1.6, '#101010', n=20, z=(0.006 if side == 'T' else -self.T - 0.006))
         for flat in B.SILK_TOP_FILL:
-            self.decal('T', 'poly', flat, SILK, hq=True)
-        for w, flat in B.SILK_TOP:
-            self.decal('T', 'line', flat, SILK, width=w, hq=w < 0.15)
+            self.decal('T', 'poly', flat, SILK)
+        for w, flat in B.SILK_TOP:                      # < 0.2 mm cizgiler yalnizca tam kalitede
+            self.decal('T', 'line', flat, SILK, width=w)
         for flat in B.SILK_BOT_FILL:
-            self.decal('B', 'poly', flat, SILK, hq=True)
+            self.decal('B', 'poly', flat, SILK)
         for w, flat in B.SILK_BOT:
-            self.decal('B', 'line', flat, SILK, width=w, hq=True)
+            self.decal('B', 'line', flat, SILK, width=w)
 
 
 # ---------------------------------------------------------------- kamera
@@ -523,6 +532,13 @@ class Board3D:
         self._hq_job = None
         self._flash_job = None
         self._hud = None
+        self._last_interact = 0.0
+        self._last_upd = self._hud_t = 0.0
+        self._upd_job = None
+        self._pool = None               # kalici yuzey detayi ogeleri (silkscreen, pad, LED isigi)
+        self._aqua = w.tk.call('tk', 'windowingsystem') == 'aqua'
+        self._aa = None
+        self._above = True
         c = self.cv
         c.bind('<Configure>', self._resize)
         c.bind('<ButtonPress-1>', self._b1_down)
@@ -545,12 +561,18 @@ class Board3D:
         except Exception:
             return False
 
+    def interacting(self):
+        """Kullanici su an dondurup/kaydirip/yakinlastiriyor mu (simulator tick payini kucultur)."""
+        return time.perf_counter() - self._last_interact < 0.25
+
     def lift(self):
         self.win.deiconify()
         self.win.lift()
         self.win.focus_set()
 
     def close(self):
+        if self._aqua:
+            self.win.tk.call('set', 'tk::mac::CGAntialiasLimit', 0)
         if self.pressed['S1']:
             self.app.cpu.p1.set_input(3, 1)
         self.win.destroy()
@@ -618,13 +640,24 @@ class Board3D:
             return (FLASH[key] if val else None), True
         return None, True
 
-    def update_state(self):
+    def update_state(self, force=False):
+        """Simulator durumunu modele yansit. macOS'ta pencerede herhangi bir degisiklik tum pencereyi yeniden
+        cizdirir (~25-35 ms), bu yuzden en fazla UPDATE_HZ kez/sn; HUD metni ayrica en fazla 2 kez/sn."""
         if not self.alive():
             return
+        now = time.perf_counter()
+        wait = 1.0 / UPDATE_HZ - (now - self._last_upd)
+        if not force and wait > 0:
+            if self._upd_job is None:
+                self._upd_job = self.win.after(int(wait * 1000) + 1, self._deferred_update)
+            return
+        self._last_upd = now
         st = self._compute_state()
+        changed = False
         for role, val in st.items():
             if self.state.get(role, object()) == val:
                 continue
+            changed = True
             self.state[role] = val
             for item, base, k, kind in self.dyn.get(role, ()):
                 col, vis = self._role_fill(role, val)
@@ -632,11 +665,16 @@ class Board3D:
                     f = shade(col, k) if col else shade(base, k)
                     self.cv.itemconfigure(item, fill=f, outline=f)
                 else:                                     # spill decal
-                    if vis and col:
+                    if vis and col and self._above:
                         self.cv.itemconfigure(item, state='normal', fill=add(PCB, col, base))
                     else:
                         self.cv.itemconfigure(item, state='hidden')
-        self._update_hud()
+        if changed or force or now - self._hud_t > 0.5:
+            self._update_hud()
+
+    def _deferred_update(self):
+        self._upd_job = None
+        self.update_state()
 
     def _update_hud(self):
         if not self._hud:
@@ -644,13 +682,18 @@ class Board3D:
         cpu, app = self.app.cpu, self.app
         if app.running:
             mode = 'LPM (uyku)' if cpu.r[2] & 0x10 else 'Calisiyor'
+            hz = getattr(app, 'sim_hz', None)
+            if hz:
+                mode += f' {hz / 1e6:.2f} MHz'
         else:
             mode = {'halt': 'Durdu (jmp $)', 'break': 'Breakpoint', 'sleep': 'Uyuyor'}.get(cpu.stop, 'Duraklatildi')
         txt = f'{mode}   PC={cpu.r[0]:04X}   {cpu.cycles} cycle'
-        self.cv.itemconfigure(self._hud, text=txt)
+        self._hud_t = time.perf_counter()
+        if self.cv.itemcget(self._hud, 'text') != txt:
+            self.cv.itemconfigure(self._hud, text=txt)
 
     def _levels_toggled(self):
-        self.update_state()
+        self.update_state(force=True)
 
     # --- cizim ---
     def _resize(self, e):
@@ -671,111 +714,157 @@ class Board3D:
         self._pending = None
         self.render(hq)
 
+    def _ensure_pool(self):
+        """Yuzey detaylari (silkscreen, pad, delik, LED isigi) sabit: ogeleri bir kez olustur, sonra coords()."""
+        if self._pool is not None:
+            return
+        cv = self.cv
+        self._pool, self._spill = [], {}
+        for side in ('T', 'B'):
+            for kind, lvl, idx, color, width, role in self.scene.decals[side]:
+                tags = ('decal',) if role else ('decal', 'd' + side, 'd' + lvl)
+                if kind == 'line':
+                    it = cv.create_line(0, 0, 1, 1, fill=color, width=1, capstyle='round', joinstyle='round',
+                                        tags=tags, state='hidden')
+                else:
+                    it = cv.create_polygon(0, 0, 1, 0, 1, 1, fill=color, outline='', tags=tags, state='hidden')
+                self._pool.append((it, side, lvl, kind, idx, width, role))
+                if role:
+                    self._spill.setdefault(role, []).append((it, 0.3 if len(idx) >= 18 else 0.65, 1.0, 'spill'))
+        self._pool_mode = self._pool_scale = None
+
     def render(self, hq=True):
+        """hq=False: surukleme/yakinlastirma karesi (kucuk yuzler, ince cizgiler, padler ve kenar cizgileri yok)."""
         sc, cam, cv = self.scene, self.cam, self.cv
         t0 = time.perf_counter()
-        cv.delete('all')
-        self.dyn = {}
+        if self._aqua and self._aa != hq:
+            # macOS: surukleme karelerinde kenar yumusatmayi kapat (cizim ~%40 hizlanir); tam karede geri ac
+            cv.tk.call('set', 'tk::mac::CGAntialiasLimit', 0 if hq else 100)
+            self._aa = hq
+        self._ensure_pool()
+        cv.delete('dyn')
+        self.dyn = {k: list(v) for k, v in self._spill.items()}
         self.state = self._compute_state()
-        xs, ys, zs = cam.project(sc.V)
         C, r, u, f = cam.basis()
+        xs, ys, zs = cam.project(sc.V)
         scale = cam.focal() / cam.dist
-        above = C[2] > -sc.T / 2
+        above = self._above = C[2] > -sc.T / 2
+        side = 'T' if above else 'B'
+        min_area = 0.75 if hq else 3.0
         create = cv.create_polygon
+        tcall, cw = cv.tk.call, cv._w            # tkinter'in secenek isleme yukunu atla (sik cagri)
+        cx, cy, cz = C
 
-        def face_list(faces):
+        def visible(faces):
             out = []
             for face in faces:
-                idx, n, d = face[0], face[1], face[2]
-                if n[0] * C[0] + n[1] * C[1] + n[2] * C[2] - d <= 1e-6:
+                n = face[1]
+                if n[0] * cx + n[1] * cy + n[2] * cz - face[2] <= 1e-6:
                     continue
-                if min(zs[i] for i in idx) <= 1.0:
+                if min(zs[i] for i in face[0]) <= 1.0:
                     continue
                 out.append(face)
             return out
 
-        def draw_face(face, tags=()):
+        def draw_face(face, tags):
             idx, _, _, base, k, fill, role = face
             coords = []
+            px, py = xs[idx[-1]], ys[idx[-1]]
+            a = 0.0
             for i in idx:
-                coords.append(xs[i])
-                coords.append(ys[i])
+                x, y = xs[i], ys[i]
+                a += px * y - x * py
+                px, py = x, y
+                coords.append(x)
+                coords.append(y)
+            a = abs(a) * 0.5
+            if a < min_area:
+                return
             if role:
-                val = self.state.get(role)
-                col, _ = self._role_fill(role, val)
+                col, _ = self._role_fill(role, self.state.get(role))
                 if col:
                     fill = shade(col, k)
-            it = create(coords, fill=fill, outline=fill, tags=tags)
+            it = tcall(cw, 'create', 'polygon', *coords, '-fill', fill,
+                       '-outline', fill if hq and a >= OUTLINE_MIN_PX2 else '', '-tags', tags)
             if role:
                 self.dyn.setdefault(role, []).append((it, base, k, 'face'))
 
-        # golge (zemin)
-        if above and C[2] > -11.6:
-            cv.create_polygon([v for i in sc.shadow for v in (xs[i], ys[i])], fill=SHADOW, outline=SHADOW)
-
-        def draw_groups(side):
+        def draw_groups(gside):
             gs = []
             for g in sc.groups:
-                if g.side != side:
+                if g.side != gside:
                     continue
-                dx = max(g.lo[0] - C[0], 0.0, C[0] - g.hi[0])
-                dy = max(g.lo[1] - C[1], 0.0, C[1] - g.hi[1])
-                dz = max(g.lo[2] - C[2], 0.0, C[2] - g.hi[2])
+                dx = max(g.lo[0] - cx, 0.0, cx - g.hi[0])
+                dy = max(g.lo[1] - cy, 0.0, cy - g.hi[1])
+                dz = max(g.lo[2] - cz, 0.0, cz - g.hi[2])
                 gs.append((dx * dx + dy * dy + dz * dz, g))
             gs.sort(key=lambda t: -t[0])
+            flip = (gside == 'B') == above
+            fx, fy, fz = f
             for _, g in gs:
-                boxes = [b for b in g.boxes if b.only is None or self.pressed.get(b.only[0]) == b.only[1]]
-                if side == 'B' and above or side == 'T' and not above:
-                    boxes.sort(key=lambda b: (-b.order, -self._depth(b.center, C, f)))
+                boxes = [bx for bx in g.boxes if (hq or not bx.detail)
+                         and (bx.only is None or self.pressed.get(bx.only[0]) == bx.only[1])]
+                if flip:
+                    boxes.sort(key=lambda bx: (-bx.order, -((bx.center[0] - cx) * fx + (bx.center[1] - cy) * fy + (bx.center[2] - cz) * fz)))
                 else:
-                    boxes.sort(key=lambda b: (b.order, -self._depth(b.center, C, f)))
-                for b in boxes:
-                    tags = (b.tag,) if b.tag else ()
-                    for face in face_list(b.faces):
+                    boxes.sort(key=lambda bx: (bx.order, -((bx.center[0] - cx) * fx + (bx.center[1] - cy) * fy + (bx.center[2] - cz) * fz)))
+                for bx in boxes:
+                    tags = (bx.tag, 'dyn') if bx.tag else ('dyn',)
+                    for face in visible(bx.faces):
                         draw_face(face, tags)
-                if g.label and side == 'T' and above:
-                    self._draw_label(g.label, xs, ys, cam, scale)
+                if g.label and gside == 'T' and above:
+                    self._draw_label(g.label, cam)
 
         def draw_board():
-            sides = face_list(sc.board_sides)
+            sides = visible(sc.board_sides)
             sides.sort(key=lambda fc: -sum(zs[i] for i in fc[0]))
             for face in sides:
-                draw_face(face)
+                draw_face(face, ('dyn',))
             idx, fill = sc.board_top if above else sc.board_bot
-            cv.create_polygon([v for i in idx for v in (xs[i], ys[i])], fill=fill, outline=fill)
+            create([v for i in idx for v in (xs[i], ys[i])], fill=fill, outline=fill if hq else '', tags=('dyn',))
 
-        def draw_decals(side):
-            for kind, idx, color, width, role, dq in sc.decals[side]:
-                if dq and not hq:
+        def place_decals():
+            proj = {'lq': cam.project(sc.VD['lq'])}
+            if hq:
+                proj['hq'] = cam.project(sc.VD['hq'])
+            mode = (side, hq)
+            if mode != self._pool_mode:
+                cv.itemconfigure('decal', state='hidden')
+                cv.itemconfigure('d' + side, state='normal')
+                if not hq:
+                    cv.itemconfigure('dhq', state='hidden')
+                self._pool_mode = mode
+            rescale = scale != self._pool_scale
+            self._pool_scale = scale
+            coords, cfg = cv.coords, cv.itemconfigure
+            for it, s_, lvl, kind, idx, width, role in self._pool:
+                if s_ != side or (lvl == 'hq' and not hq):
                     continue
-                coords = [v for i in idx for v in (xs[i], ys[i])]
-                if kind == 'line':
-                    lw = width * scale
-                    if lw < 0.35 and dq:
-                        continue
-                    cv.create_line(coords, fill=color, width=max(1.0, lw), capstyle='round', joinstyle='round')
-                else:
-                    if role:
-                        col, vis = self._role_fill(role, self.state.get(role))
-                        t = 0.3 if len(idx) >= 18 else 0.65
-                        it = cv.create_polygon(coords, fill=add(PCB, col, t) if col else color, outline='',
-                                               state='normal' if vis and col else 'hidden')
-                        self.dyn.setdefault(role, []).append((it, t, 1.0, 'spill'))
+                X, Y, _ = proj[lvl]
+                coords(it, [v for i in idx for v in (X[i], Y[i])])
+                if kind == 'line' and rescale:
+                    lw = max(1.0, width * scale)
+                    rnd = 'round' if lw >= 2.5 else 'butt'       # ince cizgide yuvarlak uc gorunmez ama pahali
+                    cfg(it, width=lw, capstyle=rnd, joinstyle='round' if lw >= 2.5 else 'miter')
+                if role:
+                    col, vis = self._role_fill(role, self.state.get(role))
+                    t = 0.3 if len(idx) >= 18 else 0.65
+                    if vis and col:
+                        cfg(it, state='normal', fill=add(PCB, col, t))
                     else:
-                        cv.create_polygon(coords, fill=color, outline='')
+                        cfg(it, state='hidden')
+            cv.tag_raise('decal')                 # alt katmanlarin (kart, alt parcalar) ustune
 
-        if above:
-            draw_groups('B')
-            draw_board()
-            draw_decals('T')
-            draw_groups('T')
-        else:
-            draw_groups('T')
-            draw_board()
-            draw_decals('B')
-            draw_groups('B')
-        self._hud = cv.create_text(12, 12, anchor='nw', fill='#e8e8e8', font=('TkFixedFont', 12), text='')
-        cv.create_text(12, cam.h - 10, anchor='sw', fill='#8a9099', font=('TkDefaultFont', 10),
+        if above and cz > -11.6:                  # zemindeki golge
+            create([v for i in sc.shadow for v in (xs[i], ys[i])], fill=SHADOW, outline='', tags=('dyn',))
+        pre, post = ('B', 'T') if above else ('T', 'B')
+        draw_groups(pre)
+        draw_board()
+        place_decals()
+        draw_groups(post)
+        self._hud = cv.create_text(12, 12, anchor='nw', fill='#e8e8e8', font=('TkFixedFont', 12), text='',
+                                   tags=('dyn',))
+        cv.create_text(12, cam.h - 10, anchor='sw', fill='#8a9099', font=('TkDefaultFont', 10), tags=('dyn',),
                        text='MSP-EXP430G2ET  (58.4 x 78.7 mm, TI tasarim dosyalarindan)')
         self._update_hud()
         self.last_ms = (time.perf_counter() - t0) * 1000
@@ -789,11 +878,7 @@ class Board3D:
         if self._drag is None:
             self.render(True)
 
-    @staticmethod
-    def _depth(p, C, f):
-        return (p[0] - C[0]) * f[0] + (p[1] - C[1]) * f[1] + (p[2] - C[2]) * f[2]
-
-    def _draw_label(self, label, xs, ys, cam, scale):
+    def _draw_label(self, label, cam):
         (p0, p1, text, size) = label
         sx, sy, sz = cam.project([p0, p1])
         if min(sz) <= 1.0:
@@ -804,7 +889,7 @@ class Board3D:
         # yazi yonu: cipin uzun ekseni boyunca, centik solda olacak sekilde (pin 1 -> asagi)
         ang = math.degrees(math.atan2(-(sy[1] - sy[0]), sx[1] - sx[0]))
         self.cv.create_text(sx[0], sy[0], text=text, angle=ang, fill='#b8b8b8',
-                            font=('Helvetica', -int(px), 'bold'))
+                            font=('Helvetica', -int(px), 'bold'), tags=('dyn',))
 
     # --- fare ---
     def _tag_under(self):
@@ -860,6 +945,7 @@ class Board3D:
         mode, x0, y0 = self._drag
         dx, dy = e.x - x0, e.y - y0
         self._drag = (mode, e.x, e.y)
+        self._last_interact = time.perf_counter()
         if mode == 'rot':
             self.cam.yaw = (self.cam.yaw + dx * 0.45) % 360
             self.cam.pitch = max(-89.9, min(89.9, self.cam.pitch + dy * 0.35))
@@ -873,6 +959,7 @@ class Board3D:
             self.redraw()
 
     def _zoom(self, d):
+        self._last_interact = time.perf_counter()
         self.cam.dist = max(25.0, min(600.0, self.cam.dist * (0.88 if d > 0 else 1 / 0.88)))
         self.request(hq=False)
 

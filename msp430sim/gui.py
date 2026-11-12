@@ -10,6 +10,11 @@ from . import ref
 from .cpu import CPUOFF, GIE, MSP430, SYMBOLS
 
 EXAMPLES = Path(__file__).parent / 'examples'
+# Tick basina emulator icin en fazla bu kadar saniye: gercek zamana yetisemeyen (mesgul dongu) programlar
+# arayuzu kilitlemesin. 3D kart dondurulurken pay kucultulur ki goruntu akici kalsin.
+TICK_BUDGET = 0.030
+REFRESH_HZ = 20          # calisirken ana pencere / 3D kart guncelleme hizi
+TICK_BUDGET_INTERACT = 0.008
 SPEEDS = {'1 kHz': 1e3, '10 kHz': 1e4, '100 kHz': 1e5, '1 MHz (gercek zaman)': 1e6, 'Max': None}
 REGIONS = {'RAM 0200': 0x0200, 'Cevre birimleri 0000': 0x0000, 'Info flash 1000': 0x1000,
            'Flash C000': 0xC000, 'Vektorler FE00': 0xFE00, 'Stack (SP)': None}
@@ -42,6 +47,8 @@ class App(tk.Tk):
         self.dirty = False
         self._loading = False
         self.carry = 0.0
+        self._last_refresh = 0.0
+        self.sim_hz = None                  # olculen efektif simulasyon hizi (cycle/s)
         self.last = time.perf_counter()
         self._menu()
         self._layout()
@@ -487,6 +494,7 @@ class App(tk.Tk):
             return
         self.running = True
         self.last = time.perf_counter()
+        self.sim_hz = None
         self.status.set('Calisiyor...')
         self.tick()
 
@@ -539,20 +547,39 @@ class App(tk.Tk):
         self.feed_rx()
         hz = SPEEDS[self.speed.get()]
         why = 'budget'
+        c0 = self.cpu.cycles
+        budget = TICK_BUDGET_INTERACT if self.board3d and self.board3d.interacting() else TICK_BUDGET
+        busy = False
         if hz is None:
-            while why == 'budget' and time.perf_counter() - now < 0.012:
+            while why == 'budget' and not busy:
                 why = self.cpu.run(3000, self.breaks)
+                busy = time.perf_counter() - now >= budget
         else:
+            # Emulator gercek zamana yetisemezse (or. mesgul dongu) UI'yi kilitlememek icin tick basina
+            # en fazla TICK_BUDGET saniye calis; kalan borc birakilir (simulasyon yavaslar, arayuz akici kalir).
             self.carry += hz * dt
             n, self.carry = int(self.carry), self.carry % 1
-            if n:
-                why = self.cpu.run(n, self.breaks)
-        self.refresh()
+            while n > 0 and why == 'budget' and not busy:
+                k = min(n, 2000)
+                why = self.cpu.run(k, self.breaks)
+                n -= k
+                busy = time.perf_counter() - now >= budget
+        if dt > 0:
+            rate = (self.cpu.cycles - c0) / dt
+            self.sim_hz = rate if self.sim_hz is None else self.sim_hz * 0.9 + rate * 0.1
         if why in ('break', 'halt', 'dead', 'illegal', 'end'):
             self.running = False
-        self.status.set(STOP_MSG.get(why, 'Calisiyor...'))
+        # macOS'ta pencerede her degisiklik tum pencereyi yeniden cizer (~12-15 ms): calisirken en fazla
+        # REFRESH_HZ kez/sn guncelle; durunca hemen.
+        t = time.perf_counter()
+        if not self.running or t - self._last_refresh >= 1.0 / REFRESH_HZ:
+            self._last_refresh = t
+            self.refresh()
+        msg = STOP_MSG.get(why, 'Calisiyor...')
+        if self.status.get() != msg:
+            self.status.set(msg)
         if self.running:
-            self.after(15, self.tick)
+            self.after(1 if busy else 15, self.tick)      # mesgulse bos bekleme yok, olaylara yine de yer acilir
 
     # ---------------- breakpoint / hata atlama ----------------
     def _toggle_bp(self, e):

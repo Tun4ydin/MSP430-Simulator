@@ -151,9 +151,42 @@ class WindowSmoke(unittest.TestCase):
             spill = b.dyn[('spill', 'D1')][0][0]
             self.assertEqual(b.cv.itemcget(spill, 'state'), 'normal')
             b.flash('TXD')
+
+            def visible():
+                return sum(1 for i in b.cv.find_all() if b.cv.itemcget(i, 'state') != 'hidden')
+            b.render(hq=False)
+            n_drag = visible()
+            b.render(hq=True)
+            n_full = visible()
+            self.assertLess(n_drag, n_full * 0.6)       # surukleme karesi belirgin sekilde hafif
             b.close()
         finally:
             root.destroy()
+
+
+class TickBudget(unittest.TestCase):
+    def test_busy_loop_does_not_block_ui(self):
+        """Gercek zamana yetisemeyen program (mesgul dongu) bir tick'te butceden fazla calismamali."""
+        import time
+        try:
+            import msp430sim.gui as G
+            app = G.App(initial_file=None)
+        except Exception as e:
+            self.skipTest(f'Tk yok: {e}')
+        try:
+            app.withdraw()
+            app.set_text(open('msp430sim/examples/blink.asm').read())
+            self.assertTrue(app.do_assemble())
+            app.running = True
+            app.last = time.perf_counter() - 0.1            # 100 ms birikmis is (eskiden ~130 ms bloklardi)
+            t = time.perf_counter()
+            app.tick()
+            self.assertLess(time.perf_counter() - t, G.TICK_BUDGET + 0.03)
+            self.assertTrue(app.running)
+        finally:
+            app.running = False
+            app.dirty = False
+            app.destroy()
 
 
 if __name__ == '__main__':
